@@ -3,7 +3,29 @@ package main
 import (
 	"log"
 	"net"
+	"sync"
 )
+
+type Job struct {
+	Conn net.Conn
+}
+
+type WorkerPool struct {
+	jobs       chan Job
+	maxWorkers int
+	wg         sync.WaitGroup
+}
+
+func NewWorkerPool(maxWorkers, queueSize int) *WorkerPool {
+	jobs := make(chan Job, queueSize+maxWorkers)
+
+	newWorker := &WorkerPool{
+		maxWorkers: maxWorkers,
+		jobs:       jobs,
+	}
+
+	return newWorker
+}
 
 func handleConn(conn net.Conn) {
 	defer conn.Close()
