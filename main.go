@@ -23,23 +23,44 @@ func NewWorkerPool(maxWorkers, queueSize int) *WorkerPool {
 		maxWorkers: maxWorkers,
 		jobs:       jobs,
 	}
+	for i := range maxWorkers {
+		newWorker.wg.Add(1)
+		go newWorker.worker(i)
+	}
 
+	// newWorker.Close()
 	return newWorker
 }
 
-func handleConn(conn net.Conn) {
-	defer conn.Close()
-	log.Println("Client Connected")
-	reader := make([]byte, 1024)
-	_, err := conn.Read(reader)
-	if err != nil {
-		log.Println("Error in reading request")
-		return
+func (w *WorkerPool) worker(id int) {
+	defer w.wg.Done()
+	for job := range w.jobs {
+		conn := job.Conn
+		log.Printf("Worker: %d processing job", id)
+		reader := make([]byte, 1024)
+		_, err := conn.Read(reader)
+		if err != nil {
+			log.Println("Error in reading request")
+			conn.Close()
+			continue
+		}
+		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nHello\n"))
+		conn.Close()
 	}
-	conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nHello\n"))
+
+}
+
+func (w *WorkerPool) Submit(job Job) {
+	w.jobs <- job
+}
+
+func (w *WorkerPool) Close() {
+	close(w.jobs)
+	w.wg.Wait()
 }
 
 func main() {
+	workers := NewWorkerPool(1, 10)
 	listener, err := net.Listen("tcp", ":8080")
 	if err != nil {
 		log.Fatal("Listener failed..")
@@ -52,6 +73,6 @@ func main() {
 			continue
 		}
 
-		go handleConn(conn)
+		workers.Submit(Job{Conn: conn})
 	}
 }
