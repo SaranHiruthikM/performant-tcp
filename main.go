@@ -1,15 +1,40 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
+	_ "embed"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.yaml.in/yaml/v2"
 )
+
+//go:embed config.yaml
+var configFile []byte
+
+type Config struct {
+	Server  ServerConfig  `yaml:"server"`
+	Metrics MetricsConfig `yaml:"metrics"`
+}
+
+type ServerConfig struct {
+	Port       int   `yaml:"port"`
+	Workers    int   `yaml:"workers"`
+	QueueSize  int64 `yaml:"queue_size"`
+	TokenRate  int64 `yaml:"token_rate"`
+	TokenLimit int64 `yaml:"token_limit"`
+}
+
+type MetricsConfig struct {
+	Port int    `yaml:"port"`
+	Path string `yaml:"path"`
+}
 
 type Job struct {
 	Conn net.Conn
@@ -104,6 +129,10 @@ func (w *WorkerPool) Close() {
 }
 
 func main() {
+	var cfg Config
+	if err := yaml.Unmarshal(configFile, &cfg); err != nil {
+		log.Fatalf("failed to load config: %v", err)
+	}
 	requestsProcessed := prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "total_requests_processed",
 		Help: "Number of requests successfully processed",
@@ -115,16 +144,16 @@ func main() {
 	prometheus.MustRegister(requestsProcessed)
 	prometheus.MustRegister(requestsRateLimited)
 	go func() {
-		http.Handle("/metrics", promhttp.Handler())
-		http.ListenAndServe(":9090", nil)
+		http.Handle(cfg.Metrics.Path, promhttp.Handler())
+		http.ListenAndServe(fmt.Sprintf(":%d", cfg.Metrics.Port), nil)
 	}()
-	workers := NewWorkerPool(1, 10, requestsProcessed)
-	rateLimiter := NewTokenBucket(2, 5)
-	listener, err := net.Listen("tcp", ":8080")
+	workers := NewWorkerPool(cfg.Server.Workers, int(cfg.Server.QueueSize), requestsProcessed)
+	rateLimiter := NewTokenBucket(cfg.Server.TokenRate, cfg.Server.TokenLimit)
+	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Server.Port))
 	if err != nil {
 		log.Fatal("Listener failed..")
 	}
-	log.Println("Server started at :8080")
+	log.Printf("Server started at :%d", cfg.Server.Port)
 	for {
 		conn, err := listener.Accept()
 		if err != nil {

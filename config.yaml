@@ -1,0 +1,10 @@
+server:
+  port: 8080
+  workers: 2
+  queue_size: 10
+  token_rate: 2
+  token_limit: 5
+
+metrics:
+  port: 9090
+  path: /metrics
