@@ -3,8 +3,12 @@ package main
 import (
 	"log"
 	"net"
+	"net/http"
 	"sync"
 	"time"
+
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Job struct {
@@ -12,9 +16,10 @@ type Job struct {
 }
 
 type WorkerPool struct {
-	jobs       chan Job
-	maxWorkers int
-	wg         sync.WaitGroup
+	jobs           chan Job
+	maxWorkers     int
+	wg             sync.WaitGroup
+	processedCount prometheus.Counter
 }
 
 type TokenBucket struct {
@@ -53,12 +58,13 @@ func (tb *TokenBucket) Allow() bool {
 	return false
 }
 
-func NewWorkerPool(maxWorkers, queueSize int) *WorkerPool {
+func NewWorkerPool(maxWorkers, queueSize int, processedCount prometheus.Counter) *WorkerPool {
 	jobs := make(chan Job, queueSize+maxWorkers)
 
 	newWorker := &WorkerPool{
-		maxWorkers: maxWorkers,
-		jobs:       jobs,
+		maxWorkers:     maxWorkers,
+		jobs:           jobs,
+		processedCount: processedCount,
 	}
 	for i := range maxWorkers {
 		newWorker.wg.Add(1)
@@ -82,6 +88,7 @@ func (w *WorkerPool) worker(id int) {
 			continue
 		}
 		conn.Write([]byte("HTTP/1.1 200 OK\r\n\r\nHello\n"))
+		w.processedCount.Inc()
 		conn.Close()
 	}
 
@@ -97,7 +104,21 @@ func (w *WorkerPool) Close() {
 }
 
 func main() {
-	workers := NewWorkerPool(1, 10)
+	requestsProcessed := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "total_requests_processed",
+		Help: "Number of requests successfully processed",
+	})
+	requestsRateLimited := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "total_requests_rate_limited",
+		Help: "Number of requests successfully rate limited",
+	})
+	prometheus.MustRegister(requestsProcessed)
+	prometheus.MustRegister(requestsRateLimited)
+	go func() {
+		http.Handle("/metrics", promhttp.Handler())
+		http.ListenAndServe(":9090", nil)
+	}()
+	workers := NewWorkerPool(1, 10, requestsProcessed)
 	rateLimiter := NewTokenBucket(2, 5)
 	listener, err := net.Listen("tcp", ":8080")
 	if err != nil {
@@ -112,6 +133,7 @@ func main() {
 		}
 
 		if !rateLimiter.Allow() {
+			requestsRateLimited.Inc()
 			conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\nRate limit exceeded\n"))
 			conn.Close()
 			continue
