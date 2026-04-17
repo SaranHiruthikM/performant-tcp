@@ -1,138 +1,111 @@
 # Performant TCP Server
 
 ## Overview
-
-This project provides a really efficient way to handle incoming network requests. It's built to keep your service responsive and stable, even when you're getting a lot of traffic, by distributing work and preventing overload before it becomes a problem. Essentially, it helps you manage high-volume network interactions smoothly.
+Ever need to build a TCP service that can handle a bunch of connections without falling over? This project gives you a solid foundation for that. It's a Go-based TCP server designed to keep things humming smoothly by managing incoming requests efficiently and preventing overload. You get a reliable way to accept connections and process them without your service getting bogged down.
 
 ## Features
-
-- **Efficient Worker Pool**: Distributes incoming TCP connections across a pool of workers, ensuring requests are processed concurrently without blocking the main listener.
-- **Token Bucket Rate Limiting**: Implements a robust token bucket algorithm to control the rate of incoming requests, protecting your service from being overwhelmed.
-- **Prometheus Metrics Integration**: Exposes custom metrics for total requests processed and total requests rate-limited, allowing for easy monitoring and observability.
-- **Simple TCP Listener**: Sets up a basic TCP server that can accept and respond to client connections.
+-   **Concurrent Request Processing**: Handles incoming TCP connections using a worker pool, allowing the server to process multiple requests at the same time efficiently.
+-   **Configurable Rate Limiting**: Integrates a token bucket algorithm to control the rate of incoming requests, protecting the server from being overwhelmed by traffic spikes.
+-   **Prometheus Metrics Integration**: Exposes key operational metrics (like processed requests and rate-limited requests) via a Prometheus endpoint, making it easy to monitor the server's performance.
+-   **Graceful Shutdown**: Ensures all active connections are handled and resources are cleaned up properly when the server is stopped, preventing data loss or abrupt service interruptions.
 
 ## Getting Started
 
-First things first, you'll need Go installed on your machine. This project was developed with Go 1.25.8, so make sure you're using a compatible version.
-
 ### Installation
+To get this server up and running on your local machine, follow these steps:
 
 1.  **Clone the Repository**:
-
     ```bash
     git clone https://github.com/SaranHiruthikM/performant-tcp.git
     cd performant-tcp
     ```
 
-2.  **Download Dependencies**:
+2.  **Install Dependencies**:
+    Go modules will handle the dependencies automatically when you build or run the project.
     ```bash
-    go mod download
+    go mod tidy
+    ```
+
+3.  **Build the Executable (Optional)**:
+    If you want a standalone executable:
+    ```bash
+    go build -o server cmd/main.go
     ```
 
 ### Environment Variables
+The server's behavior is configured using environment variables. You'll need to set these before running the application.
 
-Before running the server, you'll need to set up some environment variables. These control things like the server port, worker pool size, and rate limiter settings.
+| Variable             | Example Value | Description                                          |
+| :------------------- | :------------ | :--------------------------------------------------- |
+| `SERVER_PORT`        | `3000`        | The port on which the TCP server will listen.        |
+| `SERVER_WORKERS`     | `5`           | The number of worker goroutines to process requests. |
+| `SERVER_QUEUE_SIZE`  | `100`         | The size of the job queue for incoming connections.  |
+| `SERVER_TOKEN_RATE`  | `10`          | The rate (tokens per second) at which new tokens are added to the rate limiter. |
+| `SERVER_TOKEN_LIMIT` | `20`          | The maximum number of tokens the rate limiter bucket can hold. |
+| `METRICS_PATH`       | `/metrics`    | The HTTP path where Prometheus metrics are exposed.  |
+| `METRICS_PORT`       | `9090`        | The port for the Prometheus metrics server.          |
 
-| Variable             | Example Value | Description                                                                        |
-| :------------------- | :------------ | :--------------------------------------------------------------------------------- |
-| `SERVER_PORT`        | `8080`        | The port the TCP server will listen on.                                            |
-| `SERVER_WORKERS`     | `5`           | The number of worker goroutines in the pool to process connections.                |
-| `SERVER_QUEUE_SIZE`  | `100`         | The size of the job queue for the worker pool.                                     |
-| `SERVER_TOKEN_RATE`  | `10`          | The rate at which tokens are added to the rate limiter bucket (tokens per second). |
-| `SERVER_TOKEN_LIMIT` | `20`          | The maximum number of tokens the rate limiter bucket can hold.                     |
-| `METRICS_PATH`       | `/metrics`    | The HTTP path where Prometheus metrics will be exposed.                            |
-| `METRICS_PORT`       | `9090`        | The port where the Prometheus metrics server will listen.                          |
-
-**Example `.env` file content:**
-
+Example `.env` file content:
 ```
 SERVER_PORT=8080
-SERVER_WORKERS=5
-SERVER_QUEUE_SIZE=100
-SERVER_TOKEN_RATE=10
-SERVER_TOKEN_LIMIT=20
+SERVER_WORKERS=10
+SERVER_QUEUE_SIZE=200
+SERVER_TOKEN_RATE=50
+SERVER_TOKEN_LIMIT=100
 METRICS_PATH=/metrics
 METRICS_PORT=9090
 ```
 
 ## Usage
+Once you've set up your environment variables, running the server is straightforward.
 
-Once you've set your environment variables, you can run the server:
-
-1.  **Run the application**:
-
+1.  **Run the Server**:
+    If you built an executable:
+    ```bash
+    ./server
+    ```
+    Or, run directly from source:
     ```bash
     go run cmd/main.go
     ```
+    You should see output indicating the server has started, for example: `server running on :8080`.
 
-    You'll see a log message confirming the server has started, like `Server started at :8080`.
-
-2.  **Send a request to the TCP server**:
-    You can use `netcat` or `curl` to interact with the server.
-
-    **Using `netcat`**:
-
+2.  **Test the TCP Server**:
+    You can connect to the server using `netcat` or `telnet`. Open another terminal and try:
     ```bash
-    echo "Hello Server" | nc localhost 8080
+    nc localhost 8080
     ```
+    Type something and press Enter, then press Ctrl+D (or Ctrl+C to close `netcat`). The server will respond with `HTTP/1.1 200 OK\r\n\r\nHello\n`.
 
-    The server will respond with:
+    To observe the rate limiting in action, send many requests quickly. You might see `HTTP/1.1 429 Too Many Requests\r\n\r\nRate limit exceeded\n` if you go over the configured limit.
 
-    ```
-    HTTP/1.1 200 OK
-
-    Hello
-    ```
-
-    **Using `curl`**:
-
-    ```bash
-    curl -v localhost:8080
-    ```
-
-    The server will respond similarly, indicating a successful connection and a "Hello" message.
-
-3.  **Test the Rate Limiter**:
-    If you send requests faster than the `SERVER_TOKEN_RATE` allows, some connections will be rate-limited.
-
-    ```bash
-    # Try sending many requests quickly
-    for i in $(seq 1 30); do echo "Request $i" | nc -w 1 localhost 8080 & done
-    ```
-
-    You'll see some responses like:
-
-    ```
-    HTTP/1.1 429 Too Many Requests
-
-    Rate limit exceeded
-    ```
-
-4.  **Access Prometheus Metrics**:
-    Open your browser or use `curl` to view the exposed metrics:
-    ```bash
-    curl http://localhost:9090/metrics
-    ```
-    You'll see output similar to this, showing the counts of processed and rate-limited requests:
-    ```
-    # HELP total_requests_processed Number of requests successfully processed
-    # TYPE total_requests_processed counter
-    total_requests_processed 100
-    # HELP total_requests_rate_limited Number of requests successfully rate limited
-    # TYPE total_requests_rate_limited counter
-    total_requests_rate_limited 5
-    ```
+3.  **Monitor Metrics**:
+    While the server is running, open your web browser and navigate to `http://localhost:9090/metrics` (or whatever `METRICS_PORT` and `METRICS_PATH` you configured). You'll see the Prometheus metrics, including `total_requests_processed` and `total_requests_rate_limited`.
 
 ## Technologies Used
 
-| Technology                                                          | Description                                         |
-| :------------------------------------------------------------------ | :-------------------------------------------------- |
-| [Go](https://golang.org/)                                           | The primary language for building the server logic. |
-| [Prometheus Client Go](https://github.com/prometheus/client_golang) | Go client library for Prometheus metrics.           |
+| Technology | Description                                        | Link                                                                      |
+| :--------- | :------------------------------------------------- | :------------------------------------------------------------------------ |
+| Go         | The primary language for building the server.      | [https://golang.org/](https://golang.org/)                                |
+| Prometheus | Used for collecting and exposing application metrics. | [https://prometheus.io/](https://prometheus.io/)                           |
 
 ## Contributing
+We'd love for you to contribute to this project! If you have suggestions for improvements, feature requests, or bug reports, please open an issue on the GitHub repository.
 
-Hey, if you've got ideas on how to make this project even better, I'd love to hear them! Feel free to open an issue to discuss features or bugs, or even better, submit a pull request with your changes. Just make sure your code adheres to standard Go formatting and includes clear commit messages.
+If you'd like to contribute code, here's a general guideline:
+1.  Fork the repository.
+2.  Create a new branch for your feature or bug fix.
+3.  Make your changes and ensure your code follows Go best practices.
+4.  Write clear, concise commit messages.
+5.  Push your branch and open a pull request.
 
-[![Go](https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white)](https://golang.org/)
-[![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=for-the-badge&logo=prometheus&logoColor=white)](https://prometheus.io/)
+## License
+This project currently does not have an explicit license specified in the repository.
+
+## Author Info
+-   **Saran Hiruthik M**
+    -   LinkedIn: [linkedin.com/in/your-linkedin-profile](https://linkedin.com/in/your-linkedin-profile)
+    -   X (formerly Twitter): [twitter.com/your-twitter-handle](https://twitter.com/your-twitter-handle)
+
+---
+[![Readme was generated by Dokugen](https://img.shields.io/badge/Readme%20was%20generated%20by-Dokugen-brightgreen)](https://www.npmjs.com/package/dokugen)
