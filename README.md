@@ -1,13 +1,16 @@
 # Performant TCP Server
 
 ## Overview
-Ever need to build a TCP service that can handle a bunch of connections without falling over? This project gives you a solid foundation for that. It's a Go-based TCP server designed to keep things humming smoothly by managing incoming requests efficiently and preventing overload. You get a reliable way to accept connections and process them without your service getting bogged down.
+It's a Go-based TCP server designed to keep things humming smoothly by managing incoming requests efficiently and preventing overload. You get a reliable way to accept connections and process them without your service getting bogged down.
 
 ## Features
 -   **Concurrent Request Processing**: Handles incoming TCP connections using a worker pool, allowing the server to process multiple requests at the same time efficiently.
 -   **Configurable Rate Limiting**: Integrates a token bucket algorithm to control the rate of incoming requests, protecting the server from being overwhelmed by traffic spikes.
 -   **Prometheus Metrics Integration**: Exposes key operational metrics (like processed requests and rate-limited requests) via a Prometheus endpoint, making it easy to monitor the server's performance.
 -   **Graceful Shutdown**: Ensures all active connections are handled and resources are cleaned up properly when the server is stopped, preventing data loss or abrupt service interruptions.
+
+<img width="1059" height="1395" alt="performant-tcp-flow-diagram" src="https://github.com/user-attachments/assets/99e8b61a-f714-4ef1-ace8-8ea4b621e54c" />
+
 
 ## Getting Started
 
